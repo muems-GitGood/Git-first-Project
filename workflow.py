@@ -3,84 +3,92 @@ import google.generativeai as genai
 import sys
 
 # ==========================================
-# 1. API KEYS EINTRAGEN
+# 1. SET YOUR API KEYS
 # ==========================================
 
-# Trage hier deine Reddit API-Daten ein (siehe README.md)
-REDDIT_CLIENT_ID = "DEINE_REDDIT_CLIENT_ID"
-REDDIT_CLIENT_SECRET = "DEIN_REDDIT_CLIENT_SECRET"
-REDDIT_USER_AGENT = "YoutubeStoryBot/1.0 by DeineRedditUsername"
+# Fill in your Reddit API credentials (see README.md)
+REDDIT_CLIENT_ID = "YOUR_REDDIT_CLIENT_ID"
+REDDIT_CLIENT_SECRET = "YOUR_REDDIT_CLIENT_SECRET"
+REDDIT_USER_AGENT = "YoutubeStoryBot/1.0 by YourRedditUsername"
 
-# Trage hier deinen Gemini API-Key ein (aus dem Google AI Studio)
-GEMINI_API_KEY = "DEIN_GEMINI_API_KEY"
+# Fill in your Gemini API key (from Google AI Studio)
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+
+# Subreddits to pull the story from
+SUBREDDITS = ["sadstories", "beichtstuhl", "funny", "trending"]
 
 # ==========================================
-# 2. REDDIT POST ABRUFEN
+# 2. FETCH THE TOP REDDIT POST
 # ==========================================
 
-print("-> Verbinde mit Reddit...")
+print("-> Connecting to Reddit...")
 reddit = praw.Reddit(
     client_id=REDDIT_CLIENT_ID,
     client_secret=REDDIT_CLIENT_SECRET,
     user_agent=REDDIT_USER_AGENT
 )
 
-try:
-    # Holt den absoluten Top-Post der letzten 24 Stunden aus r/sadstories
-    subreddit = reddit.subreddit("sadstories")
-    top_post = next(subreddit.top(time_filter="day", limit=1))
+candidates = []
+for name in SUBREDDITS:
+    try:
+        # Top post of the last 24 hours from this subreddit
+        top_post = next(reddit.subreddit(name).top(time_filter="day", limit=1))
+        candidates.append(top_post)
+    except StopIteration:
+        print(f"-> No posts found today in r/{name}, skipping.")
+    except Exception as e:
+        print(f"Reddit API error for r/{name}: {e}")
 
-    reddit_title = top_post.title
-    reddit_text = top_post.selftext
-    print(f"-> Top-Post gefunden: '{reddit_title}'")
+if not candidates:
+    print("Error: No posts found in any of the configured subreddits.")
+    sys.exit()
 
-except StopIteration:
-    print("Fehler: Keine Posts in den letzten 24 Stunden gefunden.")
-    sys.exit()
-except Exception as e:
-    print(f"Reddit API Fehler: {e}")
-    sys.exit()
+# Pick the highest-scoring post across all subreddits
+top_post = max(candidates, key=lambda post: post.score)
+reddit_title = top_post.title
+reddit_text = top_post.selftext
+print(f"-> Top post found in r/{top_post.subreddit.display_name}: '{reddit_title}'")
 
 # ==========================================
-# 3. GEMINI API FÜR ÜBERSETZUNG & REWRITE
+# 3. GEMINI API FOR REWRITE
 # ==========================================
 
-print("-> Sende an Gemini für Translation & Rewrite...")
+print("-> Sending to Gemini for rewrite...")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Wir nutzen gemini-1.5-pro für die beste Storytelling-Qualität
+# Using gemini-1.5-pro for the best storytelling quality
 model = genai.GenerativeModel('gemini-1.5-pro')
 
 prompt = f"""
-Du bist ein professioneller YouTube-Skriptschreiber.
-Hier ist eine wahre Geschichte aus dem Reddit-Forum "sadstories".
+You are a professional YouTube scriptwriter.
+Here is a true story from the Reddit forum "r/{top_post.subreddit.display_name}".
 
-Titel: {reddit_title}
+Title: {reddit_title}
 Text: {reddit_text}
 
-Deine Aufgabe:
-1. Übersetze die Geschichte in fehlerfreies, fesselndes Deutsch.
-2. Schreibe sie so um, dass sie perfekt als Voiceover für ein 5-Minuten YouTube-Video funktioniert (ca. 800 - 1000 Wörter).
-3. Entferne strikt jeglichen Reddit-Jargon (wie "AITA", "TL;DR", "Update:", "Edit:"). Das Publikum soll nicht wissen, dass es von Reddit ist.
-4. Beginne das Skript mit einem starken, emotionalen Hook in den ersten 5 Sekunden, der den Zuschauer sofort fesselt.
-5. Schreibe die Geschichte aus der Ich-Perspektive, flüssig und emotional.
+Your task:
+1. Rewrite the story in polished, engaging English.
+2. Adapt it so it works perfectly as a voiceover for a 5-minute YouTube video (about 800-1000 words).
+3. Strictly remove any Reddit jargon (like "AITA", "TL;DR", "Update:", "Edit:"). The audience should not know it came from Reddit.
+4. Start the script with a strong, emotional hook in the first 5 seconds that grabs the viewer immediately.
+5. Tell the story in the first person, fluently and with emotion.
 
-Gib mir AUSSCHLIESSLICH den fertigen Text, den der Sprecher vorlesen soll. Keine Regieanweisungen, keine Einleitung, nur das reine Skript.
+Give me ONLY the finished text the narrator should read. No stage directions, no introduction, just the script itself.
 """
 
 try:
     response = model.generate_content(prompt)
     final_script = response.text
-    print("-> Skript erfolgreich generiert!")
+    print("-> Script generated successfully!")
 except Exception as e:
-    print(f"Gemini API Fehler: {e}")
+    print(f"Gemini API error: {e}")
     sys.exit()
 
 # ==========================================
-# 4. SKRIPT SPEICHERN
+# 4. SAVE THE SCRIPT
 # ==========================================
 
 with open("story.txt", "w", encoding="utf-8") as file:
     file.write(final_script)
 
-print("-> ERFOLG! Das Skript wurde in 'story.txt' gespeichert.")
+print("-> SUCCESS! The script was saved to 'story.txt'.")
